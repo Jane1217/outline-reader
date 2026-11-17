@@ -60,7 +60,7 @@ body {
 }
 button { font: inherit; color: inherit; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.app { display: flex; height: 100%; width: 100%; }
+.app { display: flex; height: 100%; width: 100%; overflow: hidden; }
 
 /* ---------- 左侧窄工具条 ---------- */
 .rail {
@@ -89,8 +89,8 @@ button { font: inherit; color: inherit; touch-action: manipulation; -webkit-tap-
 
 /* ---------- 正文 ---------- */
 .col { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; position: relative; }
-.col.tdrag .tpane { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; }
-.col.tdrag .tgrip { position: absolute; left: 0; right: 0; bottom: var(--tp-h, 34vh); z-index: 4; }
+.col.tdrag .tpane { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; height: var(--tp-max); will-change: transform; }
+.col.tdrag .tgrip { position: absolute; left: 0; right: 0; bottom: var(--tp-max); z-index: 4; will-change: transform; }
 .main { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; position: relative; overflow-anchor: none; }
 
 /* ---------- 底部译文栏：固定显示，不盖住原文 ---------- */
@@ -179,8 +179,11 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
 /* ---------- 右侧目录：整屏高度 ---------- */
 .side {
   width: var(--side-w); flex: none; min-width: 0; height: 100%;
-  display: flex; flex-direction: column; background: var(--side-bg);
+  display: flex; flex-direction: column; background: var(--side-bg); position: relative;
 }
+/* 拖动目录宽度时只平移图层（不触发重排）；目录右侧的空隙用同色补上 */
+.app.sdrag .side, .app.sdrag .grip { will-change: transform; }
+.app.sdrag .side::after { content: ""; position: absolute; left: 100%; top: 0; bottom: 0; width: 100vw; background: var(--side-bg); }
 .search { padding: 6px 6px 4px; }
 .search input {
   width: 100%; box-sizing: border-box; min-height: 28px; padding: 0 9px;
@@ -428,42 +431,33 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applySettings);
 
   /* ---------- 拖动目录宽度（目录在右侧，往左拖变宽） ---------- */
-  /* 为什么不卡：整篇文档重新排版很贵（57 万字约 100 毫秒一次）。所以拖动时先把正文版面冻住，
-     只改目录栏本身的宽度（每帧一次，只影响目录栏自己）；手指停顿或松开时，再重排一次并保持阅读位置。 */
-  var dragging = false, startX = 0, startW = 0, dragW = 0, dragRaf = 0, thawTimer = 0, frozen = false;
+  /* 为什么不卡：拖动时不改任何版面尺寸，只对目录栏和拖动条做“平移”（由显卡合成，不排版、不重绘），
+     手指松开后才一次性改宽度并重排正文，同时保持当前阅读位置。 */
+  var dragging = false, startX = 0, startW = 0, dragW = 0, dragRaf = 0;
   var sideEl = $('side');
-  function freezeDoc() {
-    if (frozen) return; frozen = true;
-    var left = doc.offsetLeft;
-    doc.style.width = doc.offsetWidth + 'px'; doc.style.maxWidth = 'none'; doc.style.margin = '0 0 0 ' + left + 'px';
-  }
-  function thawDoc() {
-    if (!frozen) return; frozen = false;
-    var h = (activeIdx >= 0 && heads[activeIdx]) ? heads[activeIdx].el : null, off = 0;
-    if (h) off = h.getBoundingClientRect().top - main.getBoundingClientRect().top;
-    doc.style.width = ''; doc.style.maxWidth = ''; doc.style.margin = '';
-    if (h) main.scrollTop += (h.getBoundingClientRect().top - main.getBoundingClientRect().top) - off;
-    measure(); updateActive(true);
-  }
+  function noSel(e) { e.preventDefault(); }
+  function setSideX(w) { var t = 'translate3d(' + (startW - w) + 'px,0,0)'; sideEl.style.transform = t; grip.style.transform = t; }
   grip.addEventListener('pointerdown', function (e) {
     dragging = true; startX = e.clientX; startW = dragW = S.w;
-    grip.setPointerCapture(e.pointerId); grip.classList.add('drag'); document.body.classList.add('dragging');
-    freezeDoc(); e.preventDefault();
+    grip.setPointerCapture(e.pointerId); grip.classList.add('drag'); app.classList.add('sdrag');
+    document.addEventListener('selectstart', noSel); e.preventDefault();
   });
   grip.addEventListener('pointermove', function (e) {
     if (!dragging) return;
     dragW = clamp(startW - (e.clientX - startX), 120, maxW());
-    if (!dragRaf) dragRaf = requestAnimationFrame(function () { dragRaf = 0; sideEl.style.setProperty('--side-w', dragW + 'px'); });
-    clearTimeout(thawTimer);
-    thawTimer = setTimeout(function () { if (dragging) { thawDoc(); freezeDoc(); } }, 220);   // 停顿时让正文跟上
+    if (!dragRaf) dragRaf = requestAnimationFrame(function () { dragRaf = 0; setSideX(dragW); });
   });
   function endDrag() {
     if (!dragging) return;
-    dragging = false; clearTimeout(thawTimer);
+    dragging = false; document.removeEventListener('selectstart', noSel);
     if (dragRaf) { cancelAnimationFrame(dragRaf); dragRaf = 0; }
-    S.w = dragW; root.style.setProperty('--side-w', S.w + 'px'); sideEl.style.removeProperty('--side-w');
-    grip.classList.remove('drag'); document.body.classList.remove('dragging');
-    thawDoc(); saveSettings();
+    var h = (activeIdx >= 0 && heads[activeIdx]) ? heads[activeIdx].el : null, off = 0;
+    if (h) off = h.getBoundingClientRect().top - main.getBoundingClientRect().top;
+    S.w = dragW; root.style.setProperty('--side-w', S.w + 'px');
+    sideEl.style.transform = ''; grip.style.transform = '';
+    grip.classList.remove('drag'); app.classList.remove('sdrag');
+    if (h) main.scrollTop += (h.getBoundingClientRect().top - main.getBoundingClientRect().top) - off;
+    measure(); updateActive(true); saveSettings();
   }
   grip.addEventListener('pointerup', endDrag);
   grip.addEventListener('pointercancel', endDrag);
@@ -1406,29 +1400,32 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
   keyHint();
 
   /* 译文栏高度：拖动上边的横条 */
-  /* 为什么不卡：改变正文区域的高度会让整篇文档重新排版（约 100 毫秒一次）。所以拖动时让译文栏
-     “浮”在正文下沿上，正文的大小先保持不动，只移动译文栏自己；松手后再一次性落定。 */
-  var tg = $('tgrip'), tp = $('tpane'), colEl = $('col'), tDrag = false, tMoved = false, tStartY = 0, tStartH = 0, tRaf = 0;
-  function setTpH(px) { tp.style.setProperty('--tp-h', px + 'px'); tg.style.setProperty('--tp-h', px + 'px'); }
+  /* 为什么不卡：改变正文区域的高度会让整篇文档重新排版。所以拖动时把译文栏按“最大高度”排好版、
+     让它浮在正文下沿，拖动只是上下平移（由显卡合成，不排版不重绘）。译文栏内容是从上往下排的，
+     露出多少就是多少，和松手后的样子完全一致；松手后再一次性落定。 */
+  var tg = $('tgrip'), tp = $('tpane'), colEl = $('col'), tDrag = false, tMoved = false, tStartY = 0, tStartH = 0, tRaf = 0, tMax = 0;
+  function setTpY(h) { var t = 'translate3d(0,' + (tMax - h) + 'px,0)'; tp.style.transform = t; tg.style.transform = t; }
   tg.addEventListener('pointerdown', function (e) {
     tDrag = true; tMoved = false; tStartY = e.clientY; tStartH = tp.offsetHeight;
+    tMax = Math.max(Math.round(window.innerHeight * 0.7), tStartH);
     var mh = main.offsetHeight; main.style.flex = 'none'; main.style.height = mh + 'px';
-    setTpH(tStartH); colEl.classList.add('tdrag');
-    tg.setPointerCapture(e.pointerId); tg.classList.add('drag'); document.body.classList.add('dragging-y'); e.preventDefault();
+    colEl.style.setProperty('--tp-max', tMax + 'px'); setTpY(tStartH); colEl.classList.add('tdrag');
+    document.addEventListener('selectstart', noSel);
+    tg.setPointerCapture(e.pointerId); tg.classList.add('drag'); e.preventDefault();
   });
   tg.addEventListener('pointermove', function (e) {
     if (!tDrag) return;
     S.th = clamp(tStartH - (e.clientY - tStartY), 100, window.innerHeight * 0.7); tMoved = true;
     /* 每帧只更新一次（iPad 手指每秒会报几十到上百次位置） */
-    if (!tRaf) tRaf = requestAnimationFrame(function () { tRaf = 0; setTpH(S.th); });
+    if (!tRaf) tRaf = requestAnimationFrame(function () { tRaf = 0; setTpY(S.th); });
   });
   function endTDrag() {
-    if (!tDrag) return; tDrag = false; tg.classList.remove('drag'); document.body.classList.remove('dragging-y');
+    if (!tDrag) return; tDrag = false; tg.classList.remove('drag'); document.removeEventListener('selectstart', noSel);
     if (tRaf) { cancelAnimationFrame(tRaf); tRaf = 0; }
-    colEl.classList.remove('tdrag'); main.style.flex = ''; main.style.height = '';
-    tp.style.removeProperty('--tp-h'); tg.style.removeProperty('--tp-h');
-    if (tMoved) { root.style.setProperty('--tp-h', S.th + 'px'); saveSettings(); }
-    else applySettings();
+    if (tMoved) root.style.setProperty('--tp-h', S.th + 'px');
+    colEl.classList.remove('tdrag'); colEl.style.removeProperty('--tp-max');
+    tp.style.transform = ''; tg.style.transform = ''; main.style.flex = ''; main.style.height = '';
+    if (tMoved) saveSettings(); else applySettings();
   }
   tg.addEventListener('pointerup', endTDrag); tg.addEventListener('pointercancel', endTDrag);
   tg.addEventListener('dblclick', function () { S.th = 0; applySettings(); saveSettings(); });
