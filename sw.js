@@ -1,7 +1,7 @@
 // 让网页版装到主屏幕后可以离线打开：页面每次先联网取最新版，没网时用缓存。
-const CACHE = 'dr-web-v1';
+const CACHE = 'dr-web-v2';
 const ASSETS = ['./', 'index.html', 'manifest.webmanifest', 'icon-180.png', 'icon-512.png',
-  'vendor/marked.min.js', 'vendor/purify.min.js', 'vendor/mammoth.browser.min.js', 'vendor/tex-svg.js'];
+  'vendor/marked.min.js', 'vendor/turndown.min.js', 'vendor/purify.min.js', 'vendor/mammoth.browser.min.js', 'vendor/tex-svg.js'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));

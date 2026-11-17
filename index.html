@@ -14,15 +14,18 @@
 <style>
 /* 布局：左窄工具条 | 正文（独立滚动） | 拖动条 | 右侧目录（整屏高度，按章节折叠） */
 :root {
-  --bg: #fbfbfc;
-  --side-bg: #f0f2f6;
-  --fg: #1b1f27;
-  --muted: #647084;
-  --line: #dde1e8;
-  --accent: #3555d6;
-  --accent-soft: #e3e9fb;
-  --code-bg: #eef0f5;
-  --quote: #c6cdda;
+  --bg: #eceef2;
+  --side-bg: #e1e5eb;
+  --fg: #232935;
+  --strong: #04060b;
+  --strong-w: 700;
+  --muted: #4b5668;
+  --toc-sub: #38425a;
+  --line: #c6ccd7;
+  --accent: #2f4fcf;
+  --accent-soft: #d3dcf5;
+  --code-bg: #dfe3ea;
+  --quote: #aab3c3;
   --shadow: 0 8px 28px rgba(20, 30, 60, .18);
   --ui-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
   --mono-font: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -33,14 +36,16 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #14161b; --side-bg: #1a1d24; --fg: #e3e6ec; --muted: #97a1b3; --line: #2a2f39;
+    --strong: #ffffff; --strong-w: 800; --toc-sub: #b9c1d0;
+    --bg: #14161b; --side-bg: #1a1d24; --fg: #cdd3dd; --muted: #9aa4b6; --line: #2a2f39;
     --accent: #8fa5ff; --accent-soft: #252c47; --code-bg: #1f232c; --quote: #3a4151;
     --shadow: 0 8px 28px rgba(0, 0, 0, .55);
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #14161b; --side-bg: #1a1d24; --fg: #e3e6ec; --muted: #97a1b3; --line: #2a2f39;
+  --strong: #ffffff; --strong-w: 800; --toc-sub: #b9c1d0;
+  --bg: #14161b; --side-bg: #1a1d24; --fg: #cdd3dd; --muted: #9aa4b6; --line: #2a2f39;
   --accent: #8fa5ff; --accent-soft: #252c47; --code-bg: #1f232c; --quote: #3a4151;
   --shadow: 0 8px 28px rgba(0, 0, 0, .55);
   color-scheme: dark;
@@ -83,7 +88,50 @@ button { font: inherit; color: inherit; touch-action: manipulation; -webkit-tap-
 .rb .dot.off { background: #c4562f; }
 
 /* ---------- 正文 ---------- */
-.main { flex: 1; min-width: 0; height: 100%; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; position: relative; }
+.col { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; }
+.main { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; position: relative; }
+
+/* ---------- 底部译文栏：固定显示，不盖住原文 ---------- */
+.tgrip {
+  flex: none; position: relative; height: 9px; cursor: row-resize; touch-action: none;
+  background: linear-gradient(var(--line), var(--line)) center / 100% 1px no-repeat;
+}
+.tgrip::before { content: ""; position: absolute; inset: -11px 0; }
+.tgrip::after { content: ""; position: absolute; left: 50%; top: 50%; width: 36px; height: 3px; margin: -1.5px 0 0 -18px; border-radius: 2px; background: var(--quote); }
+.tgrip.drag::after, .tgrip:focus-visible::after { background: var(--accent); }
+body.dragging-y { user-select: none; -webkit-user-select: none; cursor: row-resize; }
+.tpane { flex: none; height: var(--tp-h, 34vh); display: flex; flex-direction: column; min-height: 0; background: var(--side-bg); }
+.thead { flex: none; display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.thead .ttitle { font-weight: 650; color: var(--fg); }
+.thead .tsp { flex: 1; }
+.thead .btn { min-height: 28px; min-width: 28px; padding: 0 9px; font-size: 12px; }
+.tlist { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; padding: 8px 12px calc(10px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 10px; }
+.thint { font-size: 13px; line-height: 1.65; color: var(--muted); padding: 6px 2px; }
+.thint .btn { margin-top: 6px; }
+.tcard { flex: none; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 6px 12px 8px; }
+.tcard .thd { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); margin-bottom: 2px; }
+.tcard .tsrc { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tcard .tmeta { flex: none; font-variant-numeric: tabular-nums; }
+.tcard .tx { flex: none; border: 0; background: transparent; color: var(--muted); font-size: 12px; min-width: 36px; min-height: 30px; border-radius: 6px; }
+.tcard .tx:active { background: var(--accent-soft); color: var(--accent); }
+.tbody { font-size: 15px; line-height: 1.65; overflow-wrap: break-word; user-select: text; -webkit-user-select: text; }
+.tbody > :first-child { margin-top: 0; }
+.tbody > :last-child { margin-bottom: 0; }
+.tbody h1, .tbody h2, .tbody h3, .tbody h4, .tbody h5, .tbody h6 { line-height: 1.3; margin: .9em 0 .35em; }
+.tbody h1 { font-size: 1.3em; } .tbody h2 { font-size: 1.18em; } .tbody h3 { font-size: 1.08em; } .tbody h4, .tbody h5, .tbody h6 { font-size: 1em; }
+.tbody p, .tbody ul, .tbody ol, .tbody blockquote, .tbody pre { margin: 0 0 .7em; }
+.tbody ul, .tbody ol { padding-left: 1.5em; }
+.tbody li + li { margin-top: .2em; }
+.tbody blockquote { margin-left: 0; padding: .05em .9em; border-left: 3px solid var(--quote); color: var(--muted); }
+.tbody code { font-family: var(--mono-font); font-size: .88em; background: var(--code-bg); padding: .1em .35em; border-radius: 4px; }
+.tbody pre { background: var(--code-bg); padding: 10px 12px; border-radius: 8px; overflow-x: auto; }
+.tbody pre code { background: none; padding: 0; }
+.tbody table { border-collapse: collapse; font-size: .94em; }
+.tbody th, .tbody td { border: 1px solid var(--line); padding: 4px 9px; text-align: left; vertical-align: top; }
+.tbody.typing > :last-child::after { content: "▍"; color: var(--accent); animation: blink 1s steps(2) infinite; }
+.terr { color: #c4562f; }
+@keyframes blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .tbody.typing > :last-child::after { animation: none; } }
 .doc {
   max-width: 860px; margin: 0 auto; box-sizing: border-box;
   padding: 26px max(22px, 3vw) 70vh;
@@ -100,6 +148,7 @@ button { font: inherit; color: inherit; touch-action: manipulation; -webkit-tap-
 .doc ul, .doc ol { padding-left: 1.6em; }
 .doc li + li { margin-top: .25em; }
 .doc a { color: var(--accent); }
+.doc strong, .doc b, .tbody strong, .tbody b { color: var(--strong); font-weight: var(--strong-w); }
 .doc blockquote { margin-left: 0; padding: .1em 1em; border-left: 3px solid var(--quote); color: var(--muted); }
 .doc code { font-family: var(--mono-font); font-size: .88em; background: var(--code-bg); padding: .12em .38em; border-radius: 4px; }
 .doc pre { background: var(--code-bg); padding: 12px 14px; border-radius: 8px; overflow-x: auto; line-height: 1.55; }
@@ -150,7 +199,7 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
 .r .chev.none svg { display: none; }
 .r .lab {
   flex: 1; min-width: 0; font-size: var(--toc-fs); line-height: 1.35; padding: .36em 6px .36em 0;
-  color: var(--muted); cursor: pointer; overflow-wrap: anywhere; user-select: none; -webkit-user-select: none;
+  color: var(--toc-sub); cursor: pointer; overflow-wrap: anywhere; user-select: none; -webkit-user-select: none;
 }
 .r.d0 .lab { color: var(--fg); font-weight: 650; }
 .r.d0 { margin-top: 3px; }
@@ -224,6 +273,7 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
     <button class="rb" id="bToc" type="button" aria-label="显示或隐藏目录" aria-pressed="true" title="显示或隐藏目录">
       <svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2"/><path d="M15 5v14"/></svg>
     </button>
+    <button class="rb" id="bTr" type="button" aria-label="英文翻译栏" aria-pressed="false" title="英文翻译栏"><span class="aa">EN</span></button>
     <span class="sp"></span>
     <button class="rb" id="bFull" type="button" aria-label="全屏" title="全屏" hidden>
       <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
@@ -236,7 +286,21 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
     </button>
   </nav>
 
-  <main class="main" id="main"><article class="doc" id="doc"></article></main>
+  <div class="col" id="col">
+    <main class="main" id="main"><article class="doc" id="doc"></article></main>
+    <div class="tgrip" id="tgrip" role="separator" aria-orientation="horizontal" aria-label="拖动调整译文栏高度" tabindex="0" hidden></div>
+    <section class="tpane" id="tpane" aria-label="英文翻译" hidden>
+      <header class="thead">
+        <span class="ttitle">英文翻译</span>
+        <button class="btn" id="tAutoBtn" type="button" aria-pressed="true">选中即译</button>
+        <button class="btn" id="tNow" type="button" hidden>翻译选中</button>
+        <span class="tsp"></span>
+        <button class="btn" id="tClear" type="button">清空</button>
+        <button class="btn" id="tClose" type="button" aria-label="关闭译文栏">✕</button>
+      </header>
+      <div class="tlist" id="tlist"></div>
+    </section>
+  </div>
 
   <div class="grip" id="grip" role="separator" aria-orientation="vertical" aria-label="拖动调整目录宽度" tabindex="0"></div>
   <aside class="side" id="side" aria-label="目录">
@@ -269,7 +333,7 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
       <button class="btn wide" type="button" data-level="2">展开到二级标题</button>
       <button class="btn wide" type="button" data-level="99">全部展开</button>
     </div>
-    <p class="hint">点目录里每行左边的小箭头，可以单独折叠或展开那一章。正文滚到哪，目录会自动展开到哪。</p>
+    <p class="hint">点目录里每行左边的小箭头，可以单独折叠或展开那一章。目录不会自动展开，你折叠的章节会一直保持折叠。</p>
   </section>
   <section data-panel="aa" hidden>
     <h3>显示</h3>
@@ -279,6 +343,13 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
       <button class="btn" type="button" data-theme-set="auto">自动</button><button class="btn" type="button" data-theme-set="light">浅色</button><button class="btn" type="button" data-theme-set="dark">深色</button>
     </span></div>
     <p class="hint">目录宽度：直接拖动正文和目录之间的竖条。</p>
+    <h3 style="margin-top:14px">英文翻译</h3>
+    <div class="row"><span>模型</span><span class="btns">
+      <button class="btn" type="button" data-tmodel="claude-haiku-5-5">最快</button><button class="btn" type="button" data-tmodel="claude-sonnet-5-5">更准</button>
+    </span></div>
+    <input class="find" id="tKey" type="password" placeholder="Anthropic API 密钥 sk-ant-…" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Anthropic API 密钥">
+    <div class="row2"><button class="btn" id="tKeySave" type="button">保存密钥</button><button class="btn" id="tKeyClear" type="button">删除密钥</button></div>
+    <p class="hint" id="tKeyHint"></p>
   </section>
 </div>
 
@@ -287,6 +358,7 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
 <div class="dropmask" id="dropmask" hidden>松手即可打开文档</div>
 
 <script src="vendor/marked.min.js"></script>
+<script src="vendor/turndown.min.js"></script>
 <script src="vendor/purify.min.js"></script>
 <script src="vendor/mammoth.browser.min.js"></script>
 <script>
@@ -313,7 +385,7 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
   /* ---------- 设置（保存在这台设备上） ---------- */
   function lsGet(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k, v) { try { window.localStorage.setItem(k, v); return true; } catch (e) { return false; } }
-  var S = { w: 260, tocFs: 12, bodyFs: 16, theme: 'auto', hideToc: false };
+  var S = { w: 260, tocFs: 12, bodyFs: 16, theme: 'auto', hideToc: false, tOpen: false, tAuto: true, tModel: 'claude-haiku-5-5', th: 0 };
   try { var sv = JSON.parse(lsGet('dr2:settings') || '{}'); for (var k in sv) if (k in S) S[k] = sv[k]; } catch (e) {}
   function saveSettings() { lsSet('dr2:settings', JSON.stringify(S)); }
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
@@ -327,10 +399,16 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
     if (S.theme === 'auto') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', S.theme);
     app.classList.toggle('notoc', !!S.hideToc);
     $('bToc').setAttribute('aria-pressed', String(!S.hideToc));
+    $('bTr').setAttribute('aria-pressed', String(!!S.tOpen));
+    $('tpane').hidden = !S.tOpen; $('tgrip').hidden = !S.tOpen;
+    root.style.setProperty('--tp-h', (S.th > 0 ? clamp(S.th, 100, window.innerHeight * 0.7) + 'px' : '34vh'));
+    $('tAutoBtn').setAttribute('aria-pressed', String(!!S.tAuto));
+    $('tNow').hidden = !!S.tAuto;
+    document.querySelectorAll('[data-tmodel]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.tmodel === S.tModel)); });
     $('tocVal').textContent = S.tocFs; $('bodyVal').textContent = S.bodyFs;
     document.querySelectorAll('[data-theme-set]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.themeSet === S.theme)); });
     var dark = effectiveDark();
-    document.querySelector('meta[name="theme-color"]').setAttribute('content', dark ? '#14161b' : '#fbfbfc');
+    document.querySelector('meta[name="theme-color"]').setAttribute('content', dark ? '#14161b' : '#eceef2');
   }
   function effectiveDark() {
     if (S.theme === 'dark') return true;
@@ -542,7 +620,7 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
   function setLevel(n) {
     E = new Set(); autoSet = new Set();
     heads.forEach(function (h) { if (h.kids > 0 && h.d < n - 1) E.add(h.key); });
-    saveExpanded(); revealActive(); renderToc(); centerActive(true);
+    saveExpanded(); renderToc(); centerActive(true);
   }
 
   /* 当前阅读位置所在的分支自动展开，离开后自动收回（你手动展开的不动） */
@@ -607,8 +685,8 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
     while (lo <= hi) { var mid = (lo + hi) >> 1; if (tops[mid] <= y) { idx = mid; lo = mid + 1; } else hi = mid - 1; }
     if (idx === activeIdx && !(force && !toc.querySelector('.r'))) return;
     activeIdx = idx;
-    var opened = Date.now() - lastTouch > 1000 ? revealActive() : false;
-    if (opened || !toc.querySelector('.r')) { renderToc(); centerActive(); }
+    /* 不再自动展开：你折叠的章节会一直保持折叠，直到你自己点开 */
+    if (!toc.querySelector('.r')) { renderToc(); centerActive(); }
     else markActive(true);
   }
   var posTimer;
@@ -623,6 +701,7 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
   function typeset() {
     if (window.MathJax && MathJax.typesetPromise) {
       MathJax.typesetPromise([doc]).then(function () {
+        tagTex();
         measure();
         if (pendingAnchor && Date.now() - pendingAnchor.ts < 8000) {
           var j = heads.findIndex(function (h) { return h.key === pendingAnchor.key; });
@@ -964,6 +1043,277 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
     e.preventDefault(); dragDepth = 0; $('dropmask').hidden = true;
     if (e.dataTransfer && e.dataTransfer.files.length) openFiles(e.dataTransfer.files);
   });
+
+  /* ---------- 选中即译：流式调用 Claude，译文固定在底部，不盖住原文 ---------- */
+  var tcards = [], T = { ctl: null, last: '', seq: 0 };
+  try { tcards = (JSON.parse(lsGet('dr2:tcards') || '[]') || []).filter(function (c) { return c && c.out; }); } catch (e) { tcards = []; }
+  var TKEY = lsGet('dr2:akey') || '';
+  var T_SYS = [
+    'You are an expert Chinese-to-English translator inside a reading app for a software engineer\'s technical interview preparation notes (AI infrastructure, backend systems, machine learning).',
+    'Translate the text inside <text> into the most natural, accurate, idiomatic English that a fluent native-speaking engineer would actually say or write.',
+    'Rules:',
+    '1. Output ONLY the English translation. No preface, no notes, no quotation marks around it, no explanations.',
+    '2. Preserve the Markdown structure exactly: **bold**, *italic*, headings (#), bullet and numbered lists with the same nesting and order (one translated item per source item), blockquotes, tables, links, code spans and code blocks (never translate code), and line breaks.',
+    '3. Keep technical terms, product and company names, identifiers, numbers, metrics and formulas ($...$) unchanged; use the standard English term for established Chinese technical terms (for example 幂等 -> idempotent, 灰度发布 -> canary release).',
+    '4. First-person interview answers should read as fluent, confident spoken professional English (active voice, natural phrasing). Headings, labels and notes should read as concise written English.',
+    '5. Parts that are already in English stay as they are.',
+    '6. The <context> block only tells you where the text sits in the document, to resolve ambiguity. Never translate or output it.'
+  ].join('\n');
+  var MODEL_NAME = { 'claude-haiku-5-5': 'Haiku 5.5', 'claude-sonnet-5-5': 'Sonnet 5.5' };
+  var tdSvc = null;
+
+  function turndown() {
+    if (tdSvc || typeof TurndownService === 'undefined') return tdSvc;
+    tdSvc = new TurndownService({ headingStyle: 'atx', bulletListMarker: '-', codeBlockStyle: 'fenced', emDelimiter: '*', strongDelimiter: '**' });
+    tdSvc.addRule('mjx', {
+      filter: function (n) { return n.nodeName && n.nodeName.toLowerCase() === 'mjx-container'; },
+      replacement: function (c, n) { return n.getAttribute('data-tex') || ''; }
+    });
+    tdSvc.addRule('tbl', {
+      filter: 'table',
+      replacement: function (c, n) {
+        var rows = [].slice.call(n.querySelectorAll('tr')).map(function (tr) {
+          return [].slice.call(tr.children).map(function (cell) { return cell.textContent.replace(/\s+/g, ' ').replace(/\|/g, '\\|').trim(); });
+        });
+        if (!rows.length) return '';
+        var out = ['| ' + rows[0].join(' | ') + ' |', '| ' + rows[0].map(function () { return '---'; }).join(' | ') + ' |'];
+        rows.slice(1).forEach(function (r) { out.push('| ' + r.join(' | ') + ' |'); });
+        return '\n\n' + out.join('\n') + '\n\n';
+      }
+    });
+    return tdSvc;
+  }
+  /* 公式渲染后，把原始 TeX 记在元素上，这样选中含公式的文字时能还原成 $...$ */
+  function tagTex() {
+    try {
+      var list = window.MathJax && MathJax.startup && MathJax.startup.document && MathJax.startup.document.math;
+      if (!list) return;
+      for (var m of list) {
+        if (m.typesetRoot && m.typesetRoot.setAttribute) {
+          var d = m.display ? '$$' : '$';
+          m.typesetRoot.setAttribute('data-tex', d + m.math + d);
+        }
+      }
+    } catch (e) {}
+  }
+  /* 把选中的正文还原成 Markdown（保留加粗、斜体、分点、标题、表格、公式） */
+  function selectionToMarkdown(range) {
+    var svc = turndown();
+    if (!svc) return range.toString().trim();
+    var frag = range.cloneContents(), node = range.commonAncestorContainer;
+    var el = node.nodeType === 1 ? node : node.parentElement, cur = frag;
+    while (el && el !== doc) {
+      var tg = el.tagName;
+      var wrapIt = /^(STRONG|B|EM|I|CODE|H[1-6])$/.test(tg) || (/^(UL|OL)$/.test(tg) && cur.firstElementChild && cur.firstElementChild.tagName === 'LI');
+      if (wrapIt) { var w = document.createElement(tg); w.appendChild(cur); cur = w; }
+      el = el.parentElement;
+    }
+    var box = document.createElement('div'); box.appendChild(cur);
+    return svc.turndown(box).replace(/\n{3,}/g, '\n\n').trim();
+  }
+  function contextFor(range) {
+    var r = range.getBoundingClientRect(), y = r.top - main.getBoundingClientRect().top + main.scrollTop + 2;
+    var lo = 0, hi = heads.length - 1, idx = -1;
+    while (lo <= hi) { var m = (lo + hi) >> 1; if (tops[m] <= y) { idx = m; lo = m + 1; } else hi = m - 1; }
+    var chain = [], p = idx;
+    while (p >= 0 && chain.length < 3) { chain.unshift(heads[p].text); p = heads[p].parent; }
+    return chain.join(' > ');
+  }
+
+  function terr(e) {
+    var s = e && e.status, m = e && e.msg ? '（' + e.msg + '）' : '';
+    if (s === 401) return '密钥无效或已被删除' + m;
+    if (s === 403) return '这个密钥没有权限' + m;
+    if (s === 429) return '请求太频繁，或额度用完了，稍后再试' + m;
+    if (s === 400) return '请求被拒绝' + m;
+    if (s) return 'Anthropic 返回 ' + s + m;
+    return '连不上 Anthropic（网络问题）';
+  }
+  /* 流式调用 Claude Messages API；onDelta 每收到一段译文就回调一次，返回 stop_reason */
+  function streamClaude(md, ctx, signal, onDelta) {
+    var body = {
+      model: S.tModel,
+      max_tokens: Math.min(4096, Math.max(800, md.length * 2)),
+      stream: true,
+      system: T_SYS,
+      output_config: { effort: 'low' },
+      messages: [{ role: 'user', content: (ctx ? '<context>' + ctx + '</context>\n' : '') + '<text>\n' + md + '\n</text>' }]
+    };
+    if (S.tModel === 'claude-haiku-5-5') body.thinking = { type: 'disabled' };   // 翻译不需要推理，关掉最快
+    return fetch((window.__ANTHROPIC_BASE || 'https://api.anthropic.com') + '/v1/messages', {
+      method: 'POST', signal: signal,
+      headers: {
+        'content-type': 'application/json', 'x-api-key': TKEY, 'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify(body)
+    }).then(function (res) {
+      if (!res.ok) {
+        return res.text().then(function (t) {
+          var msg = ''; try { msg = (JSON.parse(t).error || {}).message || ''; } catch (e) {}
+          throw { status: res.status, msg: msg };
+        });
+      }
+      var reader = res.body.getReader(), dec = new TextDecoder(), buf = '', stop = '';
+      function pump() {
+        return reader.read().then(function (r) {
+          if (r.done) return stop;
+          buf += dec.decode(r.value, { stream: true }).replace(/\r\n/g, '\n');
+          var i;
+          while ((i = buf.indexOf('\n\n')) >= 0) {
+            var ev = buf.slice(0, i); buf = buf.slice(i + 2);
+            var line = ev.split('\n').filter(function (l) { return l.indexOf('data:') === 0; })[0];
+            if (!line) continue;
+            var d; try { d = JSON.parse(line.slice(5)); } catch (e) { continue; }
+            if (d.type === 'content_block_delta' && d.delta && d.delta.type === 'text_delta') onDelta(d.delta.text);
+            else if (d.type === 'message_delta' && d.delta && d.delta.stop_reason) stop = d.delta.stop_reason;
+            else if (d.type === 'error') throw { status: 0, msg: (d.error && d.error.message) || '' };
+          }
+          return pump();
+        });
+      }
+      return pump();
+    });
+  }
+
+  function persistCards() {
+    var keep = tcards.filter(function (c) { return c.status === 'done'; }).slice(0, 40)
+      .map(function (c) { return { id: c.id, src: c.src, out: c.out, status: 'done', ts: c.ts, model: c.model, ms: c.ms, ttft: c.ttft }; });
+    lsSet('dr2:tcards', JSON.stringify(keep));
+  }
+  function cardMeta(c) {
+    if (c.status === 'run') return c.ttft ? '翻译中…' : '等待响应…';
+    var m = MODEL_NAME[c.model] || '';
+    return c.ms ? (c.ttft ? (c.ttft / 1000).toFixed(1) + ' 秒出字 · ' : '') + (c.ms / 1000).toFixed(1) + ' 秒 · ' + m : m;
+  }
+  function paintCard(c, force) {
+    if (!c.el || (!force && !c.el.isConnected)) return;
+    var body = c.el.querySelector('.tbody');
+    body.classList.toggle('typing', c.status === 'run');
+    body.innerHTML = c.status === 'err'
+      ? '<p class="terr">' + esc(c.err || '翻译失败') + '</p>' + (c.out ? DOMPurify.sanitize(mdToHtml(c.out)) : '')
+      : DOMPurify.sanitize(mdToHtml(c.out || ''));
+    c.el.querySelector('.tmeta').textContent = cardMeta(c);
+  }
+  function typesetCard(c) {
+    if (c.el && c.el.isConnected && window.MathJax && MathJax.typesetPromise) { MathJax.typesetPromise([c.el]).catch(function () {}); }
+  }
+  function buildCard(c) {
+    var el = document.createElement('div'); el.className = 'tcard'; el.dataset.id = c.id;
+    var plain = c.src.replace(/[#*>\-`$|]/g, ' ').replace(/\s+/g, ' ').trim();
+    el.innerHTML = '<div class="thd"><span class="tsrc">原文：' + esc(plain.slice(0, 60)) + '</span><span class="tmeta"></span>' +
+      '<button class="tx" type="button" data-act="copy">复制</button><button class="tx" type="button" data-act="del" aria-label="关闭这条译文">✕</button></div><div class="tbody"></div>';
+    c.el = el; paintCard(c, true);
+    return el;
+  }
+  function renderTCards() {
+    var box = $('tlist'); box.innerHTML = '';
+    if (!TKEY) {
+      box.innerHTML = '<div class="thint">填写 Anthropic API 密钥后，在正文里选中文字就会自动翻译成英文。<br><button class="btn" id="tGoKey" type="button">填写密钥</button></div>';
+      $('tGoKey').onclick = function () { openPanel('aa', $('bAa')); };
+      return;
+    }
+    if (!tcards.length) { box.innerHTML = '<div class="thint">在正文里选中一段文字，译文会出现在这里，一直留着，直到你点 ✕ 关掉。</div>'; return; }
+    tcards.forEach(function (c) { box.appendChild(buildCard(c)); typesetCard(c); });
+  }
+  $('tlist').addEventListener('click', function (e) {
+    var b = e.target.closest('.tx'); if (!b) return;
+    var el = b.closest('.tcard'), c = tcards.filter(function (x) { return x.id === el.dataset.id; })[0]; if (!c) return;
+    if (b.dataset.act === 'del') {
+      if (c.status === 'run' && T.ctl) T.ctl.abort();
+      tcards = tcards.filter(function (x) { return x !== c; }); persistCards(); el.remove();
+      if (!tcards.length) renderTCards();
+    } else {
+      var txt = c.out || '';
+      try { navigator.clipboard.writeText(txt).then(function () { toast('已复制译文'); }, function () { toast('复制失败'); }); } catch (err) { toast('复制失败'); }
+    }
+  });
+
+  function startTranslate(md, ctx) {
+    if (!TKEY) { renderTCards(); toast('先填写 Anthropic API 密钥'); return; }
+    if (T.ctl) T.ctl.abort();
+    var ctl = new AbortController(); T.ctl = ctl;
+    var c = { id: (++T.seq) + '-' + Date.now(), src: md, out: '', status: 'run', ts: Date.now(), model: S.tModel };
+    tcards.unshift(c); renderTCards(); $('tlist').scrollTop = 0;
+    var t0 = performance.now(), raf = 0;
+    var paint = function () { raf = 0; paintCard(c); };
+    streamClaude(md, ctx, ctl.signal, function (d) {
+      if (!c.ttft) c.ttft = performance.now() - t0;
+      c.out += d; if (!raf) raf = requestAnimationFrame(paint);
+    }).then(function (stop) {
+      c.status = 'done';
+      if (stop === 'max_tokens') c.out += '\n\n…（内容太长，输出被截断，请缩短选区）';
+      if (stop === 'refusal') { c.status = 'err'; c.err = '模型拒绝翻译这段内容'; }
+    }).catch(function (e) {
+      if (e && e.name === 'AbortError') { c.status = c.out ? 'done' : 'gone'; }
+      else { c.status = 'err'; c.err = terr(e); }
+    }).then(function () {
+      c.ms = performance.now() - t0;
+      if (T.ctl === ctl) T.ctl = null;
+      if (raf) cancelAnimationFrame(raf);
+      if (c.status === 'gone') { tcards = tcards.filter(function (x) { return x !== c; }); if (c.el) c.el.remove(); return; }
+      paintCard(c); typesetCard(c); persistCards();
+    });
+  }
+
+  var selTimer = 0;
+  function handleSelection(force) {
+    if (!S.tOpen || (!S.tAuto && !force)) return;
+    var sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return;
+    var range = sel.getRangeAt(0), node = range.commonAncestorContainer, el = node.nodeType === 1 ? node : node.parentElement;
+    if (!el || !doc.contains(el)) return;                      // 只翻译正文里选中的内容
+    var plain = sel.toString().trim();
+    if (plain.length < 2) return;
+    if (plain.length > 8000) { toast('选区太长（超过 8000 字），请分几次选'); return; }
+    if (!force && plain === T.last) return;
+    T.last = plain;
+    var md = selectionToMarkdown(range);
+    if (!md) return;
+    startTranslate(md, contextFor(range));
+  }
+  document.addEventListener('selectionchange', function () {
+    clearTimeout(selTimer);
+    selTimer = setTimeout(function () { handleSelection(false); }, 450);   // 选区稳定半秒后再翻译，拖动选择手柄时不会乱发请求
+  });
+  $('tNow').addEventListener('pointerdown', function (e) { e.preventDefault(); });
+  $('tNow').onclick = function () { T.last = ''; handleSelection(true); };
+
+  $('bTr').onclick = function () { S.tOpen = !S.tOpen; applySettings(); saveSettings(); if (S.tOpen) renderTCards(); };
+  $('tClose').onclick = function () { S.tOpen = false; if (T.ctl) T.ctl.abort(); applySettings(); saveSettings(); };
+  $('tClear').onclick = function () { if (T.ctl) T.ctl.abort(); tcards = []; persistCards(); renderTCards(); };
+  $('tAutoBtn').onclick = function () { S.tAuto = !S.tAuto; applySettings(); saveSettings(); toast(S.tAuto ? '已开启：选中即译' : '已关闭自动翻译，选中后点“翻译选中”'); };
+  document.querySelectorAll('[data-tmodel]').forEach(function (b) {
+    b.onclick = function () { S.tModel = b.dataset.tmodel; applySettings(); saveSettings(); };
+  });
+  function keyHint() {
+    $('tKeyHint').textContent = TKEY
+      ? '密钥已保存在这台设备的浏览器里（…' + TKEY.slice(-4) + '）。翻译请求从这台设备直接发给 Anthropic，不经过别的服务器。建议用单独建的密钥，并设置月度额度上限。'
+      : '到 console.anthropic.com 创建一个 API 密钥（和 Claude 会员是两套账号），粘贴到上面。';
+  }
+  $('tKeySave').onclick = function () {
+    var k = $('tKey').value.trim();
+    if (!/^sk-ant-/.test(k)) { toast('密钥应以 sk-ant- 开头'); return; }
+    TKEY = k; lsSet('dr2:akey', k); $('tKey').value = ''; keyHint(); renderTCards(); toast('密钥已保存');
+  };
+  $('tKeyClear').onclick = function () { TKEY = ''; lsSet('dr2:akey', ''); keyHint(); renderTCards(); toast('密钥已删除'); };
+  keyHint();
+
+  /* 译文栏高度：拖动上边的横条 */
+  var tg = $('tgrip'), tDrag = false, tStartY = 0, tStartH = 0;
+  tg.addEventListener('pointerdown', function (e) {
+    tDrag = true; tStartY = e.clientY; tStartH = $('tpane').offsetHeight;
+    tg.setPointerCapture(e.pointerId); tg.classList.add('drag'); document.body.classList.add('dragging-y'); e.preventDefault();
+  });
+  tg.addEventListener('pointermove', function (e) {
+    if (!tDrag) return;
+    S.th = clamp(tStartH - (e.clientY - tStartY), 100, window.innerHeight * 0.7);
+    root.style.setProperty('--tp-h', S.th + 'px');
+  });
+  function endTDrag() { if (!tDrag) return; tDrag = false; tg.classList.remove('drag'); document.body.classList.remove('dragging-y'); saveSettings(); }
+  tg.addEventListener('pointerup', endTDrag); tg.addEventListener('pointercancel', endTDrag);
+  tg.addEventListener('dblclick', function () { S.th = 0; applySettings(); saveSettings(); });
+  if (S.tOpen) renderTCards();
 
   /* ---------- 启动 ---------- */
   applySettings();
