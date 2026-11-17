@@ -88,8 +88,10 @@ button { font: inherit; color: inherit; touch-action: manipulation; -webkit-tap-
 .rb .dot.off { background: #c4562f; }
 
 /* ---------- 正文 ---------- */
-.col { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; }
-.main { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; position: relative; }
+.col { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; position: relative; }
+.col.tdrag .tpane { position: absolute; left: 0; right: 0; bottom: 0; z-index: 3; }
+.col.tdrag .tgrip { position: absolute; left: 0; right: 0; bottom: var(--tp-h, 34vh); z-index: 4; }
+.main { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; position: relative; overflow-anchor: none; }
 
 /* ---------- 底部译文栏：固定显示，不盖住原文 ---------- */
 .tgrip {
@@ -100,7 +102,7 @@ button { font: inherit; color: inherit; touch-action: manipulation; -webkit-tap-
 .tgrip::after { content: ""; position: absolute; left: 50%; top: 50%; width: 36px; height: 3px; margin: -1.5px 0 0 -18px; border-radius: 2px; background: var(--quote); }
 .tgrip.drag::after, .tgrip:focus-visible::after { background: var(--accent); }
 body.dragging-y { user-select: none; -webkit-user-select: none; cursor: row-resize; }
-.tpane { flex: none; height: var(--tp-h, 34vh); display: flex; flex-direction: column; min-height: 0; background: var(--side-bg); }
+.tpane { flex: none; height: var(--tp-h, 34vh); display: flex; flex-direction: column; min-height: 0; background: var(--side-bg); contain: layout paint style; }
 .thead { flex: none; display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
 .thead .ttitle { font-weight: 650; color: var(--fg); }
 .thead .tsp { flex: 1; }
@@ -384,7 +386,15 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
 
   /* ---------- 设置（保存在这台设备上） ---------- */
   function lsGet(k) { try { return window.localStorage.getItem(k); } catch (e) { return null; } }
-  function lsSet(k, v) { try { window.localStorage.setItem(k, v); return true; } catch (e) { return false; } }
+  /* 重要的设置（GitHub 连接、密钥、界面设置）同时存两份：浏览器存储 + IndexedDB。
+     其中一份被系统清掉时，下次打开会从另一份自动找回，不用重新连接。 */
+  var KV_KEYS = { 'dr2:gh': 1, 'dr2:akey': 1, 'dr2:settings': 1, 'dr2:ghcur': 1, 'dr2:webcur': 1 };
+  function lsSet(k, v) {
+    var ok = false;
+    try { window.localStorage.setItem(k, v); ok = true; } catch (e) {}
+    if (KV_KEYS[k]) kvSet(k, v);
+    return ok;
+  }
   var S = { w: 260, tocFs: 12, bodyFs: 16, theme: 'auto', hideToc: false, tOpen: false, tAuto: true, tModel: 'claude-haiku-5-5', th: 0 };
   try { var sv = JSON.parse(lsGet('dr2:settings') || '{}'); for (var k in sv) if (k in S) S[k] = sv[k]; } catch (e) {}
   function saveSettings() { lsSet('dr2:settings', JSON.stringify(S)); }
@@ -864,12 +874,44 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
   function idb() {
     if (!idbP) idbP = new Promise(function (res) {
       try {
-        var r = indexedDB.open('dr-lib', 1);
-        r.onupgradeneeded = function () { r.result.createObjectStore('docs', { keyPath: 'name' }); };
-        r.onsuccess = function () { res(r.result); }; r.onerror = function () { res(null); };
+        var r = indexedDB.open('dr-lib', 2);
+        r.onupgradeneeded = function () {
+          var d = r.result;
+          if (!d.objectStoreNames.contains('docs')) d.createObjectStore('docs', { keyPath: 'name' });
+          if (!d.objectStoreNames.contains('kv')) d.createObjectStore('kv');
+        };
+        r.onsuccess = function () { res(r.result); }; r.onerror = function () { res(null); }; r.onblocked = function () { res(null); };
       } catch (e) { res(null); }
     });
     return idbP;
+  }
+  function kvSet(k, v) {
+    return idb().then(function (db) {
+      if (!db) return;
+      try { var st = db.transaction('kv', 'readwrite').objectStore('kv'); if (v === '' || v == null) st.delete(k); else st.put(v, k); } catch (e) {}
+    });
+  }
+  function kvGet(k) {
+    return idb().then(function (db) {
+      return new Promise(function (res) {
+        if (!db) return res(null);
+        try { var q = db.transaction('kv', 'readonly').objectStore('kv').get(k); q.onsuccess = function () { res(q.result == null ? null : q.result); }; q.onerror = function () { res(null); }; }
+        catch (e) { res(null); }
+      });
+    });
+  }
+  function restoreKV() {
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}   // 请求“不要自动清理”
+    return Promise.all(Object.keys(KV_KEYS).map(function (k) {
+      var have = lsGet(k);
+      if (have) { kvSet(k, have); return null; }
+      return kvGet(k).then(function (v) { if (v) { try { window.localStorage.setItem(k, v); } catch (e) {} } });
+    })).then(function () {
+      try { GH = JSON.parse(lsGet('dr2:gh') || 'null'); } catch (e) { GH = null; }
+      TKEY = lsGet('dr2:akey') || '';
+      try { var sv2 = JSON.parse(lsGet('dr2:settings') || '{}'); for (var k2 in sv2) if (k2 in S) S[k2] = sv2[k2]; } catch (e) {}
+      applySettings(); keyHint(); renderTCards();
+    });
   }
   function idbDo(mode, fn) {
     return idb().then(function (db) {
@@ -928,7 +970,7 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
 
   /* ----- GitHub 文库：Mac 上的文件自动同步到私有仓库，这里定时检查并更新 ----- */
   var GH = null; try { GH = JSON.parse(lsGet('dr2:gh') || 'null'); } catch (e) {}
-  var ghFiles = [], ghDirEtag = null, ghEtags = {}, ghLast = null, ghError = '', ghTick = 0;
+  var ghFiles = [], ghDirEtag = null, ghEtags = {}, ghLast = null, ghError = '', ghTick = 0, ghConfirm = 0;
   function ghUrl(path) {
     var base = (GH.api || 'https://api.github.com') + '/repos/' + GH.repo + '/contents';
     if (path) base += '/' + path.split('/').map(encodeURIComponent).join('/');
@@ -1001,6 +1043,11 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
   document.addEventListener('visibilitychange', function () { if (!document.hidden) ghRefreshNow(); });
   $('ghConnect').onclick = function () {
     if (GH) {
+      if (!ghConfirm) {                      // 防止误触：要在 4 秒内再点一次才真的断开
+        ghConfirm = setTimeout(function () { ghConfirm = 0; renderDocList(); }, 4000);
+        $('ghConnect').textContent = '再点一次确认断开'; return;
+      }
+      clearTimeout(ghConfirm); ghConfirm = 0;
       GH = null; ghFiles = []; ghDirEtag = null; ghEtags = {}; ghError = ''; lsSet('dr2:gh', '');
       $('ghForm').hidden = true; renderDocList(); return;
     }
@@ -1009,7 +1056,7 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
   $('ghCancel').onclick = function () { $('ghForm').hidden = true; };
   $('ghSave').onclick = function () {
     var repo = $('ghRepo').value.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '').replace(/\/+$/, '');
-    var token = $('ghToken').value.trim(), dir = ($('ghDir').value.trim() || 'docs').replace(/^\/+|\/+$/g, '');
+    var token = $('ghToken').value.trim().replace(/^Bearer\s+/i, ''), dir = ($('ghDir').value.trim() || 'docs').replace(/^\/+|\/+$/g, '');
     if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) { toast('仓库要写成 用户名/仓库名'); return; }
     if (!token) { toast('请填入只读令牌'); return; }
     GH = { repo: repo, dir: dir, token: token }; ghDirEtag = null; ghEtags = {}; ghFiles = []; ghError = '';
@@ -1122,9 +1169,39 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
     } catch (e) {}
   }
   /* 把选中的正文还原成 Markdown（保留加粗、斜体、分点、标题、表格、公式） */
-  function selectionToMarkdown(range) {
+  function normText(s) { return s.replace(/\s+/g, ' ').trim(); }
+  function ownText(el) {                       // 一个块自己的文字（不含嵌套的子列表）
+    var c = el.cloneNode(true);
+    [].slice.call(c.querySelectorAll('ul,ol')).forEach(function (n) { n.remove(); });
+    return normText(c.textContent);
+  }
+  function blockOf(node) {
+    var el = node.nodeType === 1 ? node : node.parentElement;
+    return el && el.closest ? el.closest('li,p,h1,h2,h3,h4,h5,h6,blockquote') : null;
+  }
+  /* 选中了整条列表项 / 整个段落 / 整个标题时，把这个块本身（圆点、编号、#）也带上，译文才会是同样的格式 */
+  function wholeBlockFor(range, plain) {
+    var sb = blockOf(range.startContainer), eb = blockOf(range.endContainer);
+    if (!sb || sb !== eb || !doc.contains(sb)) return null;
+    var own = ownText(sb);
+    if (!own || normText(plain).length < own.length * 0.9) return null;   // 只选了一部分：就按选中的那部分翻译
+    var copy = sb.cloneNode(true);
+    if (sb.tagName === 'LI') {
+      [].slice.call(copy.querySelectorAll('ul,ol')).forEach(function (n) { n.remove(); });
+      var list = sb.parentElement, ordered = list && list.tagName === 'OL', wrap = document.createElement(ordered ? 'ol' : 'ul');
+      if (ordered) wrap.setAttribute('start', String((parseInt(list.getAttribute('start') || '1', 10) || 1) + [].indexOf.call(list.children, sb)));
+      wrap.appendChild(copy); return wrap;
+    }
+    return copy;
+  }
+  function tidyMd(s) {   // 去掉行尾空格和只有空格的行，把“-   ”“1.  ”规整成“- ”“1. ”
+    return s.replace(/[ \t]+$/gm, '').replace(/^(\s*)([-*+]|\d+\.)[ \t]{2,}/gm, '$1$2 ').replace(/\n{3,}/g, '\n\n').trim();
+  }
+  function selectionToMarkdown(range, plain) {
     var svc = turndown();
     if (!svc) return range.toString().trim();
+    var whole = wholeBlockFor(range, plain || range.toString());
+    if (whole) { var wb = document.createElement('div'); wb.appendChild(whole); return tidyMd(svc.turndown(wb)); }
     var frag = range.cloneContents(), node = range.commonAncestorContainer;
     var el = node.nodeType === 1 ? node : node.parentElement, cur = frag;
     while (el && el !== doc) {
@@ -1134,7 +1211,7 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
       el = el.parentElement;
     }
     var box = document.createElement('div'); box.appendChild(cur);
-    return svc.turndown(box).replace(/\n{3,}/g, '\n\n').trim();
+    return tidyMd(svc.turndown(box));
   }
   function contextFor(range) {
     var r = range.getBoundingClientRect(), y = r.top - main.getBoundingClientRect().top + main.scrollTop + 2;
@@ -1208,6 +1285,7 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
   }
   function cardMeta(c) {
     if (c.status === 'run') return c.ttft ? '翻译中…' : '等待响应…';
+    if (c.partial) return '已中断（选了新的内容）';
     var m = MODEL_NAME[c.model] || '';
     return c.ms ? (c.ttft ? (c.ttft / 1000).toFixed(1) + ' 秒出字 · ' : '') + (c.ms / 1000).toFixed(1) + ' 秒 · ' + m : m;
   }
@@ -1256,10 +1334,13 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
 
   function startTranslate(md, ctx) {
     if (!TKEY) { renderTCards(); toast('先填写 Anthropic API 密钥'); return; }
+    if (tcards[0] && tcards[0].src === md && tcards[0].status !== 'err') return;   // 刚翻过同一段，不重复
     if (T.ctl) T.ctl.abort();
     var ctl = new AbortController(); T.ctl = ctl;
     var c = { id: (++T.seq) + '-' + Date.now(), src: md, out: '', status: 'run', ts: Date.now(), model: S.tModel };
-    tcards.unshift(c); renderTCards(); $('tlist').scrollTop = 0;
+    tcards.unshift(c);
+    var box = $('tlist'), hint = box.querySelector('.thint'); if (hint) hint.remove();
+    box.insertBefore(buildCard(c), box.firstChild); box.scrollTop = 0;     // 只插入新卡片，不重建旧的
     var t0 = performance.now(), raf = 0;
     var paint = function () { raf = 0; paintCard(c); };
     streamClaude(md, ctx, ctl.signal, function (d) {
@@ -1270,13 +1351,13 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
       if (stop === 'max_tokens') c.out += '\n\n…（内容太长，输出被截断，请缩短选区）';
       if (stop === 'refusal') { c.status = 'err'; c.err = '模型拒绝翻译这段内容'; }
     }).catch(function (e) {
-      if (e && e.name === 'AbortError') { c.status = c.out ? 'done' : 'gone'; }
-      else { c.status = 'err'; c.err = terr(e); }
+      if (e && e.name === 'AbortError') { c.status = c.out ? 'done' : 'gone'; c.partial = !!c.out; }
+      else { c.status = 'err'; c.err = terr(e); T.last = ''; }
     }).then(function () {
       c.ms = performance.now() - t0;
       if (T.ctl === ctl) T.ctl = null;
       if (raf) cancelAnimationFrame(raf);
-      if (c.status === 'gone') { tcards = tcards.filter(function (x) { return x !== c; }); if (c.el) c.el.remove(); return; }
+      if (c.status === 'gone') { tcards = tcards.filter(function (x) { return x !== c; }); if (c.el) c.el.remove(); if (!tcards.length) renderTCards(); return; }
       paintCard(c); typesetCard(c); persistCards();
     });
   }
@@ -1285,7 +1366,7 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
   function handleSelection(force) {
     if (!S.tOpen || (!S.tAuto && !force)) return;
     var sel = window.getSelection();
-    if (!sel || sel.isCollapsed || !sel.rangeCount) return;
+    if (!sel || sel.isCollapsed || !sel.rangeCount) { T.last = ''; return; }
     var range = sel.getRangeAt(0), node = range.commonAncestorContainer, el = node.nodeType === 1 ? node : node.parentElement;
     if (!el || !doc.contains(el)) return;                      // 只翻译正文里选中的内容
     var plain = sel.toString().trim();
@@ -1293,7 +1374,7 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
     if (plain.length > 8000) { toast('选区太长（超过 8000 字），请分几次选'); return; }
     if (!force && plain === T.last) return;
     T.last = plain;
-    var md = selectionToMarkdown(range);
+    var md = selectionToMarkdown(range, plain);
     if (!md) return;
     startTranslate(md, contextFor(range));
   }
@@ -1325,19 +1406,29 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
   keyHint();
 
   /* 译文栏高度：拖动上边的横条 */
-  var tg = $('tgrip'), tDrag = false, tStartY = 0, tStartH = 0;
+  /* 为什么不卡：改变正文区域的高度会让整篇文档重新排版（约 100 毫秒一次）。所以拖动时让译文栏
+     “浮”在正文下沿上，正文的大小先保持不动，只移动译文栏自己；松手后再一次性落定。 */
+  var tg = $('tgrip'), tp = $('tpane'), colEl = $('col'), tDrag = false, tMoved = false, tStartY = 0, tStartH = 0, tRaf = 0;
+  function setTpH(px) { tp.style.setProperty('--tp-h', px + 'px'); tg.style.setProperty('--tp-h', px + 'px'); }
   tg.addEventListener('pointerdown', function (e) {
-    tDrag = true; tStartY = e.clientY; tStartH = $('tpane').offsetHeight;
+    tDrag = true; tMoved = false; tStartY = e.clientY; tStartH = tp.offsetHeight;
+    var mh = main.offsetHeight; main.style.flex = 'none'; main.style.height = mh + 'px';
+    setTpH(tStartH); colEl.classList.add('tdrag');
     tg.setPointerCapture(e.pointerId); tg.classList.add('drag'); document.body.classList.add('dragging-y'); e.preventDefault();
   });
   tg.addEventListener('pointermove', function (e) {
     if (!tDrag) return;
-    S.th = clamp(tStartH - (e.clientY - tStartY), 100, window.innerHeight * 0.7);
-    $('tpane').style.setProperty('--tp-h', S.th + 'px');          // 只改译文栏自己，不触发整页重算样式
+    S.th = clamp(tStartH - (e.clientY - tStartY), 100, window.innerHeight * 0.7); tMoved = true;
+    /* 每帧只更新一次（iPad 手指每秒会报几十到上百次位置） */
+    if (!tRaf) tRaf = requestAnimationFrame(function () { tRaf = 0; setTpH(S.th); });
   });
   function endTDrag() {
     if (!tDrag) return; tDrag = false; tg.classList.remove('drag'); document.body.classList.remove('dragging-y');
-    root.style.setProperty('--tp-h', S.th + 'px'); $('tpane').style.removeProperty('--tp-h'); saveSettings();
+    if (tRaf) { cancelAnimationFrame(tRaf); tRaf = 0; }
+    colEl.classList.remove('tdrag'); main.style.flex = ''; main.style.height = '';
+    tp.style.removeProperty('--tp-h'); tg.style.removeProperty('--tp-h');
+    if (tMoved) { root.style.setProperty('--tp-h', S.th + 'px'); saveSettings(); }
+    else applySettings();
   }
   tg.addEventListener('pointerup', endTDrag); tg.addEventListener('pointercancel', endTDrag);
   tg.addEventListener('dblclick', function () { S.th = 0; applySettings(); saveSettings(); });
@@ -1350,7 +1441,7 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
     try { navigator.serviceWorker.register('sw.js').catch(function () {}); } catch (e) {}
   }
-  fetch('api/docs', { cache: 'no-store' }).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (list) {
+  restoreKV().then(function () { return fetch('api/docs', { cache: 'no-store' }); }).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (list) {
     serverOn = true; lastSync = new Date(); serverDocs = list;
     if (!list.length) throw 0;
     var want = lsGet('dr2:cur');
