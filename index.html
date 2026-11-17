@@ -794,7 +794,7 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
   function renderWebList(box) {
     $('syncDot').hidden = !GH; $('syncDot').classList.toggle('off', !!ghError);
     if (GH) {
-      groupHead(box, 'GitHub · ' + GH.repo + (GH.dir ? ' / ' + GH.dir : ''));
+      groupHead(box, 'GitHub · ' + GH.repo + (GH.dir ? '/' + GH.dir : ''));
       ghFiles.forEach(function (f) {
         var b = document.createElement('button'); b.type = 'button'; b.className = 'btn';
         b.textContent = f.name; b.title = f.name; b.setAttribute('aria-pressed', String(curKey === 'gh:' + f.path));
