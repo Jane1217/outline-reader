@@ -418,18 +418,43 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applySettings);
 
   /* ---------- 拖动目录宽度（目录在右侧，往左拖变宽） ---------- */
-  var dragging = false, startX = 0, startW = 0;
+  /* 为什么不卡：整篇文档重新排版很贵（57 万字约 100 毫秒一次）。所以拖动时先把正文版面冻住，
+     只改目录栏本身的宽度（每帧一次，只影响目录栏自己）；手指停顿或松开时，再重排一次并保持阅读位置。 */
+  var dragging = false, startX = 0, startW = 0, dragW = 0, dragRaf = 0, thawTimer = 0, frozen = false;
+  var sideEl = $('side');
+  function freezeDoc() {
+    if (frozen) return; frozen = true;
+    var left = doc.offsetLeft;
+    doc.style.width = doc.offsetWidth + 'px'; doc.style.maxWidth = 'none'; doc.style.margin = '0 0 0 ' + left + 'px';
+  }
+  function thawDoc() {
+    if (!frozen) return; frozen = false;
+    var h = (activeIdx >= 0 && heads[activeIdx]) ? heads[activeIdx].el : null, off = 0;
+    if (h) off = h.getBoundingClientRect().top - main.getBoundingClientRect().top;
+    doc.style.width = ''; doc.style.maxWidth = ''; doc.style.margin = '';
+    if (h) main.scrollTop += (h.getBoundingClientRect().top - main.getBoundingClientRect().top) - off;
+    measure(); updateActive(true);
+  }
   grip.addEventListener('pointerdown', function (e) {
-    dragging = true; startX = e.clientX; startW = S.w;
+    dragging = true; startX = e.clientX; startW = dragW = S.w;
     grip.setPointerCapture(e.pointerId); grip.classList.add('drag'); document.body.classList.add('dragging');
-    e.preventDefault();
+    freezeDoc(); e.preventDefault();
   });
   grip.addEventListener('pointermove', function (e) {
     if (!dragging) return;
-    S.w = clamp(startW - (e.clientX - startX), 120, maxW());
-    root.style.setProperty('--side-w', S.w + 'px');
+    dragW = clamp(startW - (e.clientX - startX), 120, maxW());
+    if (!dragRaf) dragRaf = requestAnimationFrame(function () { dragRaf = 0; sideEl.style.setProperty('--side-w', dragW + 'px'); });
+    clearTimeout(thawTimer);
+    thawTimer = setTimeout(function () { if (dragging) { thawDoc(); freezeDoc(); } }, 220);   // 停顿时让正文跟上
   });
-  function endDrag() { if (!dragging) return; dragging = false; grip.classList.remove('drag'); document.body.classList.remove('dragging'); saveSettings(); }
+  function endDrag() {
+    if (!dragging) return;
+    dragging = false; clearTimeout(thawTimer);
+    if (dragRaf) { cancelAnimationFrame(dragRaf); dragRaf = 0; }
+    S.w = dragW; root.style.setProperty('--side-w', S.w + 'px'); sideEl.style.removeProperty('--side-w');
+    grip.classList.remove('drag'); document.body.classList.remove('dragging');
+    thawDoc(); saveSettings();
+  }
   grip.addEventListener('pointerup', endDrag);
   grip.addEventListener('pointercancel', endDrag);
   grip.addEventListener('dblclick', function () { S.w = 260; applySettings(); saveSettings(); });
@@ -582,7 +607,7 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
   }
   var measureQueued = false;
   function queueMeasure() {
-    if (measureQueued) return; measureQueued = true;
+    if (measureQueued || dragging) return; measureQueued = true;
     requestAnimationFrame(function () { measureQueued = false; measure(); updateActive(true); });
   }
   if (window.ResizeObserver) new ResizeObserver(queueMeasure).observe(doc);
@@ -1308,9 +1333,12 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: col-resize
   tg.addEventListener('pointermove', function (e) {
     if (!tDrag) return;
     S.th = clamp(tStartH - (e.clientY - tStartY), 100, window.innerHeight * 0.7);
-    root.style.setProperty('--tp-h', S.th + 'px');
+    $('tpane').style.setProperty('--tp-h', S.th + 'px');          // 只改译文栏自己，不触发整页重算样式
   });
-  function endTDrag() { if (!tDrag) return; tDrag = false; tg.classList.remove('drag'); document.body.classList.remove('dragging-y'); saveSettings(); }
+  function endTDrag() {
+    if (!tDrag) return; tDrag = false; tg.classList.remove('drag'); document.body.classList.remove('dragging-y');
+    root.style.setProperty('--tp-h', S.th + 'px'); $('tpane').style.removeProperty('--tp-h'); saveSettings();
+  }
   tg.addEventListener('pointerup', endTDrag); tg.addEventListener('pointercancel', endTDrag);
   tg.addEventListener('dblclick', function () { S.th = 0; applySettings(); saveSettings(); });
   if (S.tOpen) renderTCards();
